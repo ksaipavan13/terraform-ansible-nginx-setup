@@ -1,15 +1,59 @@
 ---
-- hosts: all
+- hosts: all 
   become: yes
+  vars:
+    composer_version: 2.2.6
+    php_extensions:
+      - php
+      - php-cli
+      - php-common
+      - php-mysqlnd
+      - php-curl
+      - php-gd
+      - php-ldap
+      - php-mbstring
+      - php-xml
+      - php-bcmath
+      - php-tokenizer
+      - php-zip
+      - php-intl
+      - php-soap
+      - php-fpm
+    packages:
+      - git   
+      - unzip
+      - acl
+        
   tasks:
-    - name: Update yum and install Nginx
-      yum:
-        name: nginx
-        state: present
+    - name: Install PHP and extensions using shell (Amazon Linux 2)
+      command: "yum install -y {{ item }}"
+      loop: "{{ php_extensions }}"
+      ignore_errors: yes
 
-    - name: Ensure Nginx is started
+    - name: Install additional packages using shell (Amazon Linux 2)
+      command: "yum install -y {{ item }}"
+      loop: "{{ packages }}"
+      ignore_errors: yes
+        
+    - name: Install Nginx using amazon-linux-extras
+      command: "amazon-linux-extras install -y nginx1"
+      ignore_errors: yes
+
+    - name: Start and enable Nginx
       service:
         name: nginx
         state: started
         enabled: true
 
+    - name: Download Composer installer
+      get_url:
+        url: https://getcomposer.org/installer
+        dest: /tmp/composer-setup.php
+
+    - name: Install Composer
+      command: >
+        php /tmp/composer-setup.php
+        --install-dir=/usr/local/bin
+        --filename=composer
+        --version={{ composer_version }}
+        
