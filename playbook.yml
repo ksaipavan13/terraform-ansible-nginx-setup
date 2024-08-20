@@ -1,8 +1,9 @@
 ---
-- hosts: all 
+- hosts: all
   become: yes
   vars:
     composer_version: 2.2.6
+    php_version: "7.4"
     php_extensions:
       - php
       - php-cli
@@ -20,11 +21,14 @@
       - php-soap
       - php-fpm
     packages:
-      - git   
+      - git
       - unzip
       - acl
-        
+
   tasks:
+    - name: Enable PHP 7.4 repository
+      command: "amazon-linux-extras enable php{{ php_version }}"
+
     - name: Install PHP and extensions using shell (Amazon Linux 2)
       command: "yum install -y {{ item }}"
       loop: "{{ php_extensions }}"
@@ -34,7 +38,7 @@
       command: "yum install -y {{ item }}"
       loop: "{{ packages }}"
       ignore_errors: yes
-        
+
     - name: Install Nginx using amazon-linux-extras
       command: "amazon-linux-extras install -y nginx1"
       ignore_errors: yes
@@ -55,5 +59,4 @@
         php /tmp/composer-setup.php
         --install-dir=/usr/local/bin
         --filename=composer
-        --version={{ composer_version }}
-        
+        --version={{ composer_version }}  
