@@ -1,11 +1,16 @@
+# Define the provider
 provider "aws" {
   region = "us-east-1"
 }
 
+# Security group allowing SSH
 resource "aws_security_group" "allow_ssh" {
-  name_prefix = "allow_ssh"
+  name        = "allow_ssh"
+  description = "Allow SSH inbound traffic"
+  vpc_id      = "vpc-009f8ae4effa297b9"  # Your VPC ID
 
   ingress {
+    description = "SSH"
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
@@ -20,61 +25,82 @@ resource "aws_security_group" "allow_ssh" {
   }
 }
 
-resource "aws_ami_from_instance" "web_ami" {
-  name               = "terraform-ansible"
-  source_instance_id = "i-006badb0389e4648d"  # Replace with your current instance ID
-  snapshot_without_reboot = true
-}
-
-resource "aws_launch_template" "web_launch_template" {
-  name_prefix   = "web-launch-template-"
-  image_id      = aws_ami_from_instance.web_ami.id
-  instance_type = "t3.micro"
-  key_name      = "hopp"
-
-  network_interfaces {
-    security_groups = [aws_security_group.allow_ssh.id]
-  }
+# EC2 Instance to configure with Ansible
+resource "aws_instance" "web_server" {
+  ami           = "ami-0c8e23f950c7725b9"  # Amazon Linux 2 AMI ID for us-east-1
+  instance_type = "t3.micro"  # Modify as needed
+  key_name      = "hopp"  # Your key pair name
+  security_groups = [aws_security_group.allow_ssh.name]
 
   provisioner "local-exec" {
     command = <<-EOT
-      ansible-playbook -i hosts.txt playbook.yml --private-key=/Users/saipavankarepe/Downloads/hopp.pem -u ec2-user -e 'ansible_ssh_common_args="-o StrictHostKeyChecking=no"'
+      sleep 30 && ansible-playbook -i ${self.public_ip}, playbook.yml --private-key=/Users/saipavankarepe/Downloads/hopp.pem -u ec2-user -e 'ansible_ssh_common_args="-o StrictHostKeyChecking=no"'
     EOT
+  }
+
+  tags = {
+    Name = "Ansible-Configured-Server"
+  }
+}
+
+# Create an AMI from the configured instance
+resource "aws_ami_from_instance" "web_ami" {
+  name               = "terraform-ansible-configured-ami"
+  source_instance_id = aws_instance.web_server.id
+  snapshot_without_reboot = true
+
+  tags = {
+    Name = "terraform-ansible-configured-ami"
+  }
+}
+
+# Launch template for Auto Scaling
+resource "aws_launch_template" "web_launch_template" {
+  name_prefix   = "web-launch-template"
+  image_id      = aws_ami_from_instance.web_ami.id
+  instance_type = "t3.micro"  # Modify as needed
+  key_name      = "hopp"  # Your key pair name
+
+  block_device_mappings {
+    device_name = "/dev/xvda"
+
+    ebs {
+      delete_on_termination = true
+      volume_size           = 8
+      volume_type           = "gp2"
+    }
+  }
+
+  network_interfaces {
+    associate_public_ip_address = true
+    security_groups = [aws_security_group.allow_ssh.id]
+    subnet_id = "subnet-0b1710dea004d7cb1"  # Your Subnet ID
   }
 
   tag_specifications {
     resource_type = "instance"
+
     tags = {
-      Name = "Ansible-Managed-Server"
+      Name = "AutoScaledInstance"
     }
   }
 }
 
+# Auto Scaling Group
 resource "aws_autoscaling_group" "web_asg" {
-  name                 = "web-asg"
-  vpc_zone_identifier  = ["subnet-0da373a5ec08a2071"]
+  desired_capacity     = 1
+  max_size             = 1
+  min_size             = 1
+  vpc_zone_identifier  = ["subnet-0b1710dea004d7cb1"]  # Your Subnet ID
+
   launch_template {
     id      = aws_launch_template.web_launch_template.id
     version = "$Latest"
-}
-  min_size             = 1
-  max_size             = 1  
-  desired_capacity     = 1
-
-  instance_refresh {  
-    strategy = "Rolling"
-    preferences {
-      instance_warmup              = 300
-      min_healthy_percentage       = 90
-      skip_matching                = false
-      standby_instances            = "Ignore"
-      scale_in_protected_instances = "Ignore"
-    }
   }
-  
+
   tag {
     key                 = "Name"
-    value               = "Ansible-Managed-Server"
+    value               = "AutoScaledInstance"
     propagate_at_launch = true
   }
 }
@@ -82,4 +108,7 @@ resource "aws_autoscaling_group" "web_asg" {
 output "ami_id" {
   value = aws_ami_from_instance.web_ami.id
 }
-  
+
+output "launch_template_id" {
+  value = aws_launch_template.web_launch_template.id
+}
