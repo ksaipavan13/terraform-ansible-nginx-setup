@@ -27,9 +27,9 @@ resource "aws_security_group" "allow_ssh" {
 
 # Step 1: Create and configure an EC2 instance with Ansible
 resource "aws_instance" "web_server" {
-  ami           = "ami-079f209c2e9a02afd"  # Amazon Linux 2 AMI ID for us-east-1
-  instance_type = "t4g.micro"  # Using Graviton instance type
-  key_name      = "hopp"  # Your key pair name
+  ami           = "ami-079f209c2e9a02afd"  # Amazon Linux 2 AMI ID for arm64
+  instance_type = "t4g.micro"
+  key_name      = "hopp"  
   security_groups = [aws_security_group.allow_ssh.name]
 
   provisioner "local-exec" {
@@ -45,12 +45,12 @@ resource "aws_instance" "web_server" {
 
 # Step 2: Create an AMI from the configured instance
 resource "aws_ami_from_instance" "web_ami" {
-  name               = "terraform-ansible-configured-ami"
+  name               = "terraform-ansible-configured-ami-arm64"
   source_instance_id = aws_instance.web_server.id
   snapshot_without_reboot = true
 
   tags = {
-    Name = "terraform-ansible-configured-ami"
+    Name = "terraform-ansible-configured-ami-arm64"
   }
 }
 
@@ -58,8 +58,8 @@ resource "aws_ami_from_instance" "web_ami" {
 resource "aws_launch_template" "web_launch_template" {
   name_prefix   = "web-launch-template"
   image_id      = aws_ami_from_instance.web_ami.id
-  instance_type = "t4g.micro"  # Modify as needed
-  key_name      = "hopp"  # Your key pair name
+  instance_type = "t4g.micro"
+  key_name      = "hopp"
 
   block_device_mappings {
     device_name = "/dev/xvda"
@@ -69,14 +69,14 @@ resource "aws_launch_template" "web_launch_template" {
       volume_size           = 8
       volume_type           = "gp2"
     }
-}
-  
+  }
+
   network_interfaces {
     associate_public_ip_address = true
     security_groups = [aws_security_group.allow_ssh.id]
-    subnet_id = "subnet-0b1710dea004d7cb1"  # Your Subnet ID
+    subnet_id = "subnet-0b1710dea004d7cb1"  
   }
-   
+
   tag_specifications {
     resource_type = "instance"
 
@@ -85,31 +85,31 @@ resource "aws_launch_template" "web_launch_template" {
     }
   }
 }
-  
+
 # Step 4: Auto Scaling Group
 resource "aws_autoscaling_group" "web_asg" {
   desired_capacity     = 1
   max_size             = 1
   min_size             = 1
-  vpc_zone_identifier  = ["subnet-0b1710dea004d7cb1"]  # Your Subnet ID
-  
+  vpc_zone_identifier  = ["subnet-0b1710dea004d7cb1"]  
+
   launch_template {
     id      = aws_launch_template.web_launch_template.id
     version = "$Latest"
   }
-  
+
   tag {
     key                 = "Name"
     value               = "AutoScaledInstance"
     propagate_at_launch = true
   }
 }
+
+# Outputs
 output "ami_id" {
   value = aws_ami_from_instance.web_ami.id
 }
-    
+
 output "launch_template_id" {
   value = aws_launch_template.web_launch_template.id
-}  
- 
-
+}
